@@ -1,368 +1,318 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BattleCity, type HudSnapshot } from "./game/engine";
+import { LEVEL_COUNT } from "./game/levels";
 
-const initialHud: HudSnapshot = {
-  phase: "menu", score: 0, best: 0, newBest: false, lives: 3, level: 1,
-  levelTitle: "ПЕРЕДОВАЯ", enemiesLeft: 0, star: 0, muted: false,
-  kills: 0, accuracy: 0, powerups: 0, reason: "",
-};
-
-/* ---------------- SVG-иконки ---------------- */
-function TankIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} fill="currentColor" aria-hidden>
-      <rect x="7" y="0" width="2" height="6" />
-      <rect x="4.5" y="4" width="7" height="4" rx="1" />
-      <rect x="2" y="7.5" width="12" height="5" rx="1" />
-      <rect x="0.5" y="12.5" width="15" height="2.6" rx="1.2" />
-    </svg>
-  );
-}
-function StarIcon({ className = "", dim = false }: { className?: string; dim?: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} fill="currentColor" opacity={dim ? 0.18 : 1} aria-hidden>
-      <path d="M8 0.8l2.2 4.6 5 .7-3.6 3.5.9 5L8 12.2l-4.5 2.4.9-5L.8 6.1l5-.7z" />
-    </svg>
-  );
-}
-function SoundIcon({ off, className = "" }: { off: boolean; className?: string }) {
-  return (
-    <svg viewBox="0 0 20 20" className={className} fill="currentColor" aria-hidden>
-      <path d="M2 7h3l5-4v14l-5-4H2z" />
-      {off ? (
-        <path d="M12.5 7.5l5 5m0-5l-5 5" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" />
-      ) : (
-        <path d="M13 6.5a5 5 0 010 7M15.5 4.5a8 8 0 010 11" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-      )}
-    </svg>
-  );
-}
-function PauseIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} fill="currentColor" aria-hidden>
-      <rect x="3" y="2" width="4" height="12" /><rect x="9" y="2" width="4" height="12" />
-    </svg>
-  );
-}
-function LogoMark({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 40 40" className={className} aria-hidden>
-      <rect x="1" y="1" width="38" height="38" fill="#1b2412" stroke="#56742c" strokeWidth="2" />
-      <rect x="18" y="5" width="4" height="12" fill="#a8f637" />
-      <rect x="13" y="14" width="14" height="8" rx="2" fill="#ffc84a" />
-      <rect x="8" y="21" width="24" height="9" rx="2" fill="#ffc84a" />
-      <rect x="5" y="30" width="30" height="5" rx="2.4" fill="#86d416" />
-      <circle cx="20" cy="25.5" r="2.4" fill="#15230a" />
-    </svg>
-  );
-}
-
-const ENEMY_BRIEF = [
-  { name: "РАЗВЕДЧИК", pts: 100, color: "#b9c6ae" },
-  { name: "ШТУРМОВИК", pts: 200, color: "#54d8e8" },
-  { name: "ИСТРЕБИТЕЛЬ", pts: 300, color: "#ff6d9d" },
-  { name: "БРОНЕНОСЕЦ", pts: 400, color: "#9a8f82" },
-];
+const TANK_SVGS = {
+  basic: <svg viewBox="0 0 16 16" className="w-full h-full"><path d="M3 2h10v11l-5 2-5-2z" fill="#b9c6ae" /><path d="M7 4h2v5h-2z" fill="#6d7a62" /><circle cx="8" cy="6.5" r="1.6" fill="#6d7a62" /></svg>,
+  fast: <svg viewBox="0 0 16 16" className="w-full h-full"><path d="M2 7l12-5-4 6 4 6-12-5 3-2z" fill="#54d8e8" /></svg>,
+  power: <svg viewBox="0 0 16 16" className="w-full h-full"><circle cx="8" cy="8" r="6" fill="none" stroke="#ff6d9d" strokeWidth="2.5" /><circle cx="8" cy="8" r="2" fill="#ff6d9d" /></svg>,
+  armor: <svg viewBox="0 0 16 16" className="w-full h-full"><path d="M8 1l6 3v5c0 3.5-2.5 5.5-6 6-3.5-.5-6-2.5-6-6V4z" fill="#9a8f82" /><path d="M8 4l3.5 1.8V9c0 2-1.4 3.3-3.5 3.7-2.1-.4-3.5-1.7-3.5-3.7V5.8z" fill="#5c5348" /></svg>,
+} as const;
 
 function Kbd({ children }: { children: ReactNode }) {
-  return <span className="kbd">{children}</span>;
+  return <span className="kbd inline-block leading-none">{children}</span>;
 }
 
-/* ---------------- основной компонент ---------------- */
+function Pip({ on, color }: { on: boolean; color: string }) {
+  return (
+    <span
+      className="inline-block w-4 h-4 border border-black/70"
+      style={{ background: on ? color : "rgba(255,255,255,0.06)", boxShadow: on ? `0 0 8px ${color}88` : "none" }}
+    />
+  );
+}
+
+function StarRow({ n, color }: { n: number; color: string }) {
+  return (
+    <span className="inline-flex gap-1 items-center">
+      {[0, 1, 2].map((i) => (
+        <Pip key={i} on={n > i} color={color} />
+      ))}
+    </span>
+  );
+}
+
+function EnemyIcon({ kind }: { kind: keyof typeof TANK_SVGS }) {
+  return <span className="inline-block w-4 h-4 drop-shadow">{TANK_SVGS[kind]}</span>;
+}
+
 export default function App() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const engRef = useRef<BattleCity | null>(null);
-  const [hud, setHud] = useState<HudSnapshot>(initialHud);
-  const [side, setSide] = useState(520);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const engineRef = useRef<BattleCity | null>(null);
+  const [hud, setHud] = useState<HudSnapshot>({
+    phase: "menu", score: 0, best: 0, newBest: false, lives: 3, level: 1,
+    levelTitle: "", enemiesLeft: 0, star: 0, star1: 0, star2: 0, mode: 1, menuSel: 0,
+    muted: false, kills: 0, accuracy: 0, powerups: 0, reason: "",
+  });
 
   useEffect(() => {
-    const eng = new BattleCity(canvasRef.current!, setHud);
-    engRef.current = eng;
-    return () => eng.destroy();
+    if (!canvasRef.current) return;
+    const game = new BattleCity(canvasRef.current, setHud);
+    engineRef.current = game;
+    return () => game.destroy();
   }, []);
 
-  useEffect(() => {
-    const el = wrapRef.current!;
-    const ro = new ResizeObserver(() => {
-      const r = el.getBoundingClientRect();
-      setSide(Math.max(240, Math.floor(Math.min(r.width, r.height)) - 6));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const g = engineRef.current;
+  const playing = hud.phase === "playing" || hud.phase === "paused" || hud.phase === "clear";
+  const coOp = hud.mode === 2;
 
-  const eng = () => engRef.current;
-  const inGame = hud.phase === "playing" || hud.phase === "paused" || hud.phase === "intro" || hud.phase === "clear";
+  const touchHold = (fn: (v: boolean) => void) => ({
+    onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); fn(true); },
+    onPointerUp: () => fn(false),
+    onPointerLeave: () => fn(false),
+    onPointerCancel: () => fn(false),
+  });
+  const dpad = (d: 0 | 1 | 2 | 3) => ({
+    onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); g?.setTouchDir(d); },
+    onPointerUp: () => g?.setTouchDir(null),
+    onPointerLeave: () => g?.setTouchDir(null),
+    onPointerCancel: () => g?.setTouchDir(null),
+  });
+
+  const modeCard = (sel: boolean, idx: 0 | 1, title: string, sub: string, accent: string) => (
+    <button
+      onClick={() => { g?.setMenuSel(idx); g?.startRun(idx === 0 ? 1 : 2); }}
+      onMouseEnter={() => g?.setMenuSel(idx)}
+      className={`btn-arcade relative px-5 py-3.5 text-left w-full ${sel ? "btn-acid" : "btn-dark"}`}
+      style={sel ? { boxShadow: `0 4px 0 #000, 0 0 26px ${accent}55` } : undefined}
+    >
+      <span className="block text-sm">{title}</span>
+      <span className={`block text-[9px] tracking-[0.18em] mt-1 ${sel ? "text-[#15230a]/80" : "text-[#8fae58]"}`}>{sub}</span>
+      {sel && <span className="absolute -left-1 top-1/2 -translate-y-1/2 text-[#a8f637] text-lg leading-none" style={{ left: "-14px" }}>▶</span>}
+    </button>
+  );
 
   return (
-    <div className="battlefield-bg h-full flex flex-col select-none overflow-hidden">
-      {/* ======= шапка ======= */}
-      <header className="flex items-center gap-3 px-4 h-14 shrink-0 border-b border-[#2a3a1c] bg-[#0c100a]/80">
-        <LogoMark className="w-8 h-8 shrink-0" />
-        <div className="leading-none">
-          <div className="font-disp text-[17px] tracking-wide text-[#e8efdd]">
-            СТАЛЬНОЙ <span className="text-[#a8f637]">РУБЕЖ</span>
-          </div>
-          <div className="text-[10px] tracking-[0.3em] text-[#8fae58] font-medium mt-1">BATTLE CITY · RELOADED</div>
-        </div>
-        <div className="flex-1" />
-        <div className="hidden sm:flex items-center gap-5 mr-1">
-          <div className="text-right leading-tight">
-            <div className="hud-label">Счёт</div>
-            <div className="font-disp text-lg text-[#ffb42a]">{hud.score}</div>
-          </div>
-          <div className="text-right leading-tight">
-            <div className="hud-label">Рекорд</div>
-            <div className="font-disp text-lg text-[#a8f637]">{hud.best}</div>
-          </div>
-        </div>
-        <button
-          className="btn-arcade btn-dark px-3 py-2 flex items-center gap-2 text-[11px]"
-          onClick={() => eng()?.toggleMute()}
-          title="Звук (M)"
-        >
-          <SoundIcon off={hud.muted} className="w-4 h-4" />
-          <span className="hidden md:inline">{hud.muted ? "Звук выкл" : "Звук вкл"}</span>
-        </button>
-      </header>
+    <div className="battlefield-bg min-h-screen w-full flex items-center justify-center p-3 sm:p-5 relative overflow-hidden">
+      {/* фоновые декорации */}
+      <div className="pointer-events-none absolute inset-0 opacity-[0.05]" style={{ backgroundImage: "repeating-linear-gradient(45deg, #a8f637 0 2px, transparent 2px 90px)" }} />
 
-      {/* ======= игровое поле + HUD ======= */}
-      <main className="flex-1 min-h-0 flex items-stretch justify-center gap-4 px-4 py-3">
-        <div ref={wrapRef} className="relative flex-1 min-w-0 flex items-center justify-center">
-          <div className="tank-frame scanlines relative shrink-0" style={{ width: side, height: side }}>
-            {[["top-1 left-1"], ["top-1 right-1"], ["bottom-1 left-1"], ["bottom-1 right-1"]].map((p) => (
-              <span key={p[0]} className={`rivet ${p[0]}`} />
-            ))}
-            <canvas
-              ref={canvasRef}
-              className="block w-full h-full relative z-10"
-              style={{ imageRendering: "auto" }}
-            />
+      <div className="flex flex-col xl:flex-row gap-5 items-center xl:items-stretch max-w-[1150px] w-full justify-center relative z-10">
+        {/* ======== ИГРОВОЙ ЭКРАН ======== */}
+        <div className="tank-frame scanlines shrink-0">
+          <span className="rivet" style={{ top: 5, left: 5 }} />
+          <span className="rivet" style={{ top: 5, right: 5 }} />
+          <span className="rivet" style={{ bottom: 5, left: 5 }} />
+          <span className="rivet" style={{ bottom: 5, right: 5 }} />
+          <div className="relative" style={{ width: "min(92vw, 66vh, 624px)", aspectRatio: "1 / 1" }}>
+            <canvas ref={canvasRef} className="w-full h-full block" style={{ imageRendering: "auto", background: "#0e120a" }} />
 
-            {/* ---------- оверлеи ---------- */}
+            {/* -------- МЕНЮ -------- */}
             {hud.phase === "menu" && (
-              <div className="absolute inset-[10px] z-40 overlay-in flex flex-col items-center justify-center text-center bg-[#0a0d07]/92 px-5 overflow-hidden">
-                <div className="text-[10px] tracking-[0.4em] text-[#8fae58] font-medium mb-3">ОПЕРАЦИЯ · NES TRIBUTE · 1985/2026</div>
-                <h1 className="font-disp title-glow text-[#a8f637] leading-none" style={{ fontSize: "clamp(30px, 6.2vmin, 54px)" }}>
-                  СТАЛЬНОЙ<br />РУБЕЖ
-                </h1>
-                <div className="font-disp text-[#ffb42a] tracking-[0.42em] text-sm mt-3 mb-6">BATTLE CITY RELOADED</div>
+              <div className="absolute inset-0 z-20 overlay-in flex flex-col items-center justify-center bg-[rgba(6,8,4,0.88)] px-6 text-center">
+                <div className="hud-label mb-2">1985 · NES · ПЕРЕИЗДАНИЕ 2026</div>
+                <h1 className="font-disp title-glow text-4xl sm:text-6xl leading-none text-[#a8f637]">СТАЛЬНОЙ<br />РУБЕЖ</h1>
+                <p className="mt-3 text-[11px] tracking-[0.3em] text-[#8fae58] font-disp">BATTLE CITY RELOADED · {LEVEL_COUNT} УРОВНЕЙ</p>
 
-                <div className="grid grid-cols-2 gap-x-8 gap-y-2.5 mb-6">
-                  {ENEMY_BRIEF.map((e) => (
-                    <div key={e.name} className="flex items-center gap-2.5">
-                      <span className="shrink-0 drop-shadow-[0_0_6px_rgba(0,0,0,0.6)]" style={{ color: e.color }}>
-                        <TankIcon className="w-5 h-5" />
-                      </span>
-                      <span className="block leading-tight">
-                        <span className="block text-[11px] font-bold tracking-wide" style={{ color: e.color }}>{e.name}</span>
-                        <span className="block text-[10px] text-[#8fae58]">{e.pts} очков</span>
-                      </span>
-                    </div>
-                  ))}
+                <div className="hazard h-1.5 w-40 my-4" />
+
+                <div className="w-full max-w-[300px] flex flex-col gap-2.5">
+                  {modeCard(hud.menuSel === 0, 0, "СОЛО-КАМПАНИЯ", "WASD + ПРОБЕЛ · 3 ЭКИПАЖА", "#a8f637")}
+                  {modeCard(hud.menuSel === 1, 1, "КО-ОП НА ДВОИХ", "P1: WASD+SPACE · P2: СТРЕЛКИ+ENTER", "#54d8e8")}
+                </div>
+                <div className="mt-2.5 text-[10px] text-[#8fae58] tracking-widest">
+                  <Kbd>↑</Kbd> <Kbd>↓</Kbd> выбор · <Kbd>Enter</Kbd> старт · <Kbd>1</Kbd> <Kbd>2</Kbd> быстрый старт
                 </div>
 
-                <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[11px] text-[#cfe3ae] mb-7">
-                  <span className="flex items-center gap-1.5"><Kbd>W</Kbd><Kbd>A</Kbd><Kbd>S</Kbd><Kbd>D</Kbd><span className="text-[#8fae58]">движение</span></span>
-                  <span className="flex items-center gap-1.5"><Kbd>SPACE</Kbd><span className="text-[#8fae58]">огонь</span></span>
-                  <span className="flex items-center gap-1.5"><Kbd>P</Kbd><span className="text-[#8fae58]">пауза</span></span>
-                  <span className="flex items-center gap-1.5"><Kbd>M</Kbd><span className="text-[#8fae58]">звук</span></span>
+                <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-1.5 text-left text-[11px] text-[#cfe3ae]">
+                  <div className="flex items-center gap-2 col-span-2 hud-label !text-[9px]">Брифинг по противнику</div>
+                  <div className="flex items-center gap-2"><EnemyIcon kind="basic" /> Разведчик — 100</div>
+                  <div className="flex items-center gap-2"><EnemyIcon kind="fast" /> Штурмовик — 200</div>
+                  <div className="flex items-center gap-2"><EnemyIcon kind="power" /> Истребитель — 300</div>
+                  <div className="flex items-center gap-2"><EnemyIcon kind="armor" /> Броненосец — 400</div>
                 </div>
 
-                <button className="btn-arcade btn-acid px-10 py-3.5 text-[15px]" onClick={() => eng()?.startRun()}>
-                  В БОЙ
-                </button>
-                <div className="blink font-disp text-[11px] text-[#ffd76a] tracking-[0.3em] mt-4">НАЖМИ ENTER</div>
                 {hud.best > 0 && (
-                  <div className="absolute bottom-4 text-[11px] text-[#8fae58]">
-                    Рекорд командования: <span className="font-disp text-[#a8f637]">{hud.best}</span>
-                  </div>
+                  <div className="mt-4 text-[11px] tracking-[0.2em] text-[#ffd76a] font-disp">РЕКОРД: {hud.best.toLocaleString("ru-RU")}</div>
                 )}
               </div>
             )}
 
+            {/* -------- ПАУЗА -------- */}
             {hud.phase === "paused" && (
-              <div className="absolute inset-[10px] z-40 overlay-in flex flex-col items-center justify-center bg-[#0a0d07]/88">
-                <PauseIcon className="w-10 h-10 text-[#ffb42a] mb-3" />
-                <div className="font-disp text-3xl text-[#e8efdd] tracking-widest">ПАУЗА</div>
-                <div className="text-[11px] text-[#8fae58] tracking-[0.25em] mt-2 mb-7">ОПЕРАЦИЯ ПРИОСТАНОВЛЕНА</div>
-                <div className="flex flex-col gap-3 w-56">
-                  <button className="btn-arcade btn-acid py-3 text-sm" onClick={() => eng()?.togglePause()}>Продолжить · P</button>
-                  <button className="btn-arcade btn-dark py-3 text-sm" onClick={() => eng()?.backToMenu()}>В меню</button>
+              <div className="absolute inset-0 z-20 overlay-in flex flex-col items-center justify-center bg-[rgba(6,8,4,0.82)]">
+                <div className="font-disp text-4xl text-[#ffd76a] tracking-widest blink">ПАУЗА</div>
+                <div className="mt-4 flex flex-col gap-1.5 text-[12px] text-[#cfe3ae]">
+                  <div className="flex items-center gap-3"><span className="w-3 h-3 inline-block" style={{ background: "#ffc84a" }} /> Игрок 1 — тюнинг <StarRow n={hud.star1} color="#ffc84a" /></div>
+                  {coOp && <div className="flex items-center gap-3"><span className="w-3 h-3 inline-block" style={{ background: "#6fe25c" }} /> Игрок 2 — тюнинг <StarRow n={hud.star2} color="#6fe25c" /></div>}
                 </div>
+                <div className="mt-5 flex gap-3">
+                  <button className="btn-arcade btn-acid px-5 py-2.5 text-xs" onClick={() => g?.togglePause()}>Продолжить</button>
+                  <button className="btn-arcade btn-dark px-5 py-2.5 text-xs" onClick={() => g?.backToMenu()}>В меню</button>
+                </div>
+                <div className="mt-3 text-[10px] text-[#8fae58]"><Kbd>P</Kbd> / <Kbd>Esc</Kbd> — вернуться в бой</div>
               </div>
             )}
 
+            {/* -------- GAME OVER -------- */}
             {hud.phase === "gameover" && (
-              <div className="absolute inset-[10px] z-40 overlay-in flex flex-col items-center justify-center text-center bg-[#160808]/93 px-6">
-                <div className="hazard h-2 w-40 mb-5" />
-                <div className="font-disp text-[#ff4747] leading-none" style={{ fontSize: "clamp(26px, 5.4vmin, 44px)", textShadow: "0 0 24px rgba(255,71,71,0.5)" }}>
-                  ИГРА ОКОНЧЕНА
+              <div className="absolute inset-0 z-20 overlay-in flex flex-col items-center justify-center bg-[rgba(20,4,3,0.9)] px-6 text-center">
+                <div className="font-disp text-5xl sm:text-6xl text-[#ff4747] title-glow" style={{ textShadow: "0 0 30px rgba(255,71,71,0.6)" }}>РАЗГРОМ</div>
+                <div className="mt-2 text-[11px] tracking-[0.3em] text-[#ffb0a6]">{hud.reason.toUpperCase()}</div>
+                <div className="hazard h-1.5 w-36 my-4" />
+                <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-[12px] text-[#e8efdd]">
+                  <div className="text-right text-[#8fae58]">Очки</div><div className="text-left font-disp">{hud.score.toLocaleString("ru-RU")}</div>
+                  <div className="text-right text-[#8fae58]">Рубеж</div><div className="text-left font-disp">{hud.level} / {LEVEL_COUNT}</div>
+                  <div className="text-right text-[#8fae58]">Подбито</div><div className="text-left font-disp">{hud.kills}</div>
+                  <div className="text-right text-[#8fae58]">Бонусы</div><div className="text-left font-disp">{hud.powerups}</div>
+                  <div className="text-right text-[#8fae58]">Рекорд</div>
+                  <div className={`text-left font-disp ${hud.newBest ? "text-[#ffd76a]" : ""}`}>{hud.best.toLocaleString("ru-RU")}{hud.newBest ? " ★" : ""}</div>
                 </div>
-                <div className="text-[12px] text-[#e8b4ae] tracking-[0.2em] mt-3 uppercase">{hud.reason}</div>
-                <div className="grid grid-cols-3 gap-6 mt-7 mb-8">
-                  <div><div className="hud-label">Счёт</div><div className="font-disp text-2xl text-[#ffb42a]">{hud.score}</div></div>
-                  <div><div className="hud-label">Рекорд</div><div className="font-disp text-2xl text-[#a8f637]">{hud.best}</div></div>
-                  <div><div className="hud-label">Подбито</div><div className="font-disp text-2xl text-[#e8efdd]">{hud.kills}</div></div>
+                <div className="mt-5 flex gap-3 flex-wrap justify-center">
+                  <button className="btn-arcade btn-acid px-6 py-3 text-xs" onClick={() => g?.startRun(hud.mode as 1 | 2)}>В бой снова</button>
+                  <button className="btn-arcade btn-dark px-6 py-3 text-xs" onClick={() => g?.backToMenu()}>В меню</button>
                 </div>
-                {hud.newBest && <div className="blink font-disp text-[#ffd23a] text-sm tracking-[0.25em] mb-5">★ НОВЫЙ РЕКОРД ★</div>}
-                <div className="flex flex-col gap-3 w-60">
-                  <button className="btn-arcade btn-amber py-3 text-sm" onClick={() => eng()?.startRun()}>Реванш · Enter</button>
-                  <button className="btn-arcade btn-dark py-3 text-sm" onClick={() => eng()?.backToMenu()}>В меню</button>
-                </div>
+                <div className="mt-3 text-[10px] text-[#8fae58]"><Kbd>Enter</Kbd> — реванш</div>
               </div>
             )}
 
+            {/* -------- ПОБЕДА -------- */}
             {hud.phase === "victory" && (
-              <div className="absolute inset-[10px] z-40 overlay-in flex flex-col items-center justify-center text-center bg-[#0a120a]/93 px-6">
-                <div className="flex gap-2 mb-4">
-                  {[0, 1, 2].map((i) => <StarIcon key={i} className="w-7 h-7 text-[#ffd23a] float-slow" />)}
+              <div className="absolute inset-0 z-20 overlay-in flex flex-col items-center justify-center bg-[rgba(8,14,4,0.92)] px-6 text-center">
+                <div className="float-slow">
+                  <svg viewBox="0 0 48 48" className="w-16 h-16 mx-auto" style={{ filter: "drop-shadow(0 0 14px rgba(255,210,58,0.7))" }}>
+                    <path d="M24 4l5.8 11.8L43 17.7l-9.5 9.2 2.2 13.1L24 33.8 12.3 40l2.2-13.1L5 17.7l13.2-1.9z" fill="#ffd23a" />
+                  </svg>
                 </div>
-                <div className="font-disp title-glow text-[#a8f637]" style={{ fontSize: "clamp(30px, 6vmin, 50px)" }}>ПОБЕДА!</div>
-                <div className="text-[12px] text-[#cfe3ae] tracking-[0.22em] mt-3">ШЕСТЬ РУБЕЖЕЙ ВЗЯТЫ · СЧЁТ {hud.score}</div>
-                <div className="text-[11px] text-[#8fae58] mt-1 mb-7">Подбито: {hud.kills} · Бонусов: {hud.powerups}</div>
-                <div className="flex flex-col gap-3 w-64">
-                  <button className="btn-arcade btn-acid py-3 text-sm" onClick={() => eng()?.continueWar()}>Продолжить войну · Enter</button>
-                  <button className="btn-arcade btn-dark py-3 text-sm" onClick={() => eng()?.backToMenu()}>В меню</button>
+                <div className="font-disp title-glow text-4xl sm:text-5xl text-[#a8f637] mt-2">ПОБЕДА</div>
+                <div className="mt-2 text-[11px] tracking-[0.3em] text-[#cfe3ae]">ВСЕ {LEVEL_COUNT} РУБЕЖЕЙ ВЗЯТЫ{coOp ? " · ЭКИПАЖ-ДУЭТ" : ""}</div>
+                <div className="hazard h-1.5 w-36 my-4" />
+                <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-[12px] text-[#e8efdd]">
+                  <div className="text-right text-[#8fae58]">Очки</div><div className="text-left font-disp">{hud.score.toLocaleString("ru-RU")}</div>
+                  <div className="text-right text-[#8fae58]">Подбито</div><div className="text-left font-disp">{hud.kills}</div>
+                  <div className="text-right text-[#8fae58]">Рекорд</div>
+                  <div className={`text-left font-disp ${hud.newBest ? "text-[#ffd76a]" : ""}`}>{hud.best.toLocaleString("ru-RU")}{hud.newBest ? " ★" : ""}</div>
+                </div>
+                <div className="mt-5 flex gap-3 flex-wrap justify-center">
+                  <button className="btn-arcade btn-acid px-6 py-3 text-xs" onClick={() => g?.startRun(hud.mode as 1 | 2)}>Ещё раз</button>
+                  <button className="btn-arcade btn-dark px-6 py-3 text-xs" onClick={() => g?.backToMenu()}>В меню</button>
                 </div>
               </div>
             )}
 
+            {/* -------- ЗАЧИСТКА -------- */}
             {hud.phase === "clear" && (
-              <div className="absolute inset-[10px] z-30 pointer-events-none flex flex-col items-center justify-center">
-                <div className="slide-down bg-[#0a0d07]/85 border border-[#56742c] px-8 py-5 text-center shadow-[0_0_40px_rgba(168,246,55,0.25)]">
-                  <div className="hazard h-1.5 w-full mb-3" />
-                  <div className="font-disp text-[#a8f637] text-2xl tracking-wider">УРОВЕНЬ {hud.level} ЗАЧИЩЕН</div>
-                  <div className="text-[11px] text-[#cfe3ae] mt-2 tracking-widest">
-                    ТОЧНОСТЬ {hud.accuracy}% · ПОДБИТО {hud.kills} · +500
+              <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                <div className="slide-down hud-panel px-8 py-4 text-center">
+                  <div className="font-disp text-3xl text-[#a8f637]">ЗАЧИЩЕНО</div>
+                  <div className="mt-1 text-[11px] tracking-[0.25em] text-[#8fae58]">
+                    РУБЕЖ {hud.level} / {LEVEL_COUNT} ПАЛ · ТОЧНОСТЬ {hud.accuracy}%
                   </div>
-                  <div className="hazard h-1.5 w-full mt-3" />
                 </div>
               </div>
+            )}
+
+            {/* -------- СЕНСОРНОЕ УПРАВЛЕНИЕ -------- */}
+            {playing && (
+              <>
+                <div className="touch-only absolute left-3 bottom-3 z-20 grid grid-cols-3 gap-1 select-none" style={{ width: 132 }}>
+                  <span />
+                  <button className="touch-btn h-11 text-lg" {...dpad(0)}>▲</button>
+                  <span />
+                  <button className="touch-btn h-11 text-lg" {...dpad(3)}>◀</button>
+                  <span />
+                  <button className="touch-btn h-11 text-lg" {...dpad(1)}>▶</button>
+                  <span />
+                  <button className="touch-btn h-11 text-lg" {...dpad(2)}>▼</button>
+                  <span />
+                </div>
+                <div className="touch-only absolute right-3 bottom-3 z-20 select-none">
+                  <button className="touch-btn w-16 h-16 rounded-full font-disp text-sm border-2" {...touchHold((v) => g?.setTouchFire(v))}>ОГОНЬ</button>
+                </div>
+              </>
             )}
           </div>
-
-          {/* ------- сенсорное управление ------- */}
-          {inGame && hud.phase !== "paused" && (
-            <div className="touch-only absolute inset-x-0 bottom-2 z-50 flex items-end justify-between px-4 pointer-events-none">
-              <div className="grid grid-cols-3 gap-1.5 pointer-events-auto" style={{ width: 150 }}>
-                <span />
-                <TouchBtn label="▲" onDown={() => eng()?.setTouchDir(0)} onUp={() => eng()?.setTouchDir(null)} />
-                <span />
-                <TouchBtn label="◀" onDown={() => eng()?.setTouchDir(3)} onUp={() => eng()?.setTouchDir(null)} />
-                <span />
-                <TouchBtn label="▶" onDown={() => eng()?.setTouchDir(1)} onUp={() => eng()?.setTouchDir(null)} />
-                <span />
-                <TouchBtn label="▼" onDown={() => eng()?.setTouchDir(2)} onUp={() => eng()?.setTouchDir(null)} />
-                <span />
-              </div>
-              <button
-                className="touch-btn pointer-events-auto rounded-full font-disp text-sm text-[#ffd76a]"
-                style={{ width: 74, height: 74 }}
-                onPointerDown={(e) => { e.preventDefault(); eng()?.setTouchFire(true); }}
-                onPointerUp={() => eng()?.setTouchFire(false)}
-                onPointerLeave={() => eng()?.setTouchFire(false)}
-                onPointerCancel={() => eng()?.setTouchFire(false)}
-              >
-                ОГОНЬ
-              </button>
-            </div>
-          )}
         </div>
 
-        {/* ======= правая HUD-панель ======= */}
-        <aside className="hidden lg:flex flex-col gap-3 w-60 shrink-0 min-h-0 overflow-y-auto py-0.5">
-          <div className="hud-panel p-3 pt-4">
-            <div className="flex items-baseline justify-between">
-              <span className="hud-label">Противники</span>
-              <span className="font-disp text-lg text-[#ff6d5a]">{hud.enemiesLeft}</span>
-            </div>
-            <div className="grid grid-cols-10 gap-[3px] mt-2">
-              {Array.from({ length: Math.min(hud.enemiesLeft, 20) }).map((_, i) => (
-                <TankIcon key={i} className="w-3.5 h-3.5 text-[#ff8a6a]" />
+        {/* ======== HUD-ПАНЕЛЬ ======== */}
+        <div className="w-full max-w-[624px] xl:w-[300px] xl:max-w-none flex flex-col gap-3">
+          <div className="hud-panel px-4 pt-4 pb-3">
+            <div className="hud-label">Противник</div>
+            <div className="flex flex-wrap gap-[7px] mt-2 min-h-[22px] items-center">
+              {Array.from({ length: Math.max(0, hud.enemiesLeft) }).map((_, i) => (
+                <span key={i} className="inline-block w-[15px] h-[15px]" style={{ background: "#ff4747", clipPath: "polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)", boxShadow: "0 0 6px rgba(255,71,71,0.5)" }} />
               ))}
-              {hud.enemiesLeft === 0 && inGame && <span className="text-[10px] text-[#8fae58] col-span-10">чисто</span>}
+              {hud.enemiesLeft === 0 && <span className="text-[11px] text-[#8fae58] tracking-widest">ЧИСТО</span>}
             </div>
           </div>
 
-          <div className="hud-panel p-3 pt-4">
-            <span className="hud-label">Счёт</span>
-            <div className="font-disp text-[28px] leading-tight text-[#ffb42a]">{hud.score}</div>
-            <div className="flex items-center justify-between mt-1">
-              <span className="text-[10px] text-[#8fae58] tracking-widest">РЕКОРД</span>
-              <span className="font-disp text-sm text-[#a8f637]">{hud.best}</span>
-            </div>
-            {hud.newBest && hud.score > 0 && (
-              <div className="blink text-[9px] font-disp text-[#ffd23a] tracking-[0.2em] mt-1">НОВЫЙ РЕКОРД</div>
-            )}
-          </div>
-
-          <div className="hud-panel p-3 pt-4">
-            <div className="flex items-center justify-between">
-              <span className="hud-label">Экипаж</span>
-              <span className="font-disp text-lg text-[#a8f637]">{hud.lives}</span>
-            </div>
-            <div className="flex gap-1.5 mt-2">
-              {Array.from({ length: Math.min(hud.lives, 5) }).map((_, i) => (
-                <TankIcon key={i} className="w-5 h-5 text-[#ffc84a]" />
-              ))}
-              {hud.lives > 5 && <span className="font-disp text-[#ffc84a] text-sm self-center">+{hud.lives - 5}</span>}
-              {hud.lives === 0 && <span className="text-[10px] text-[#8fae58]">резерв исчерпан</span>}
+          <div className="hud-panel px-4 pt-4 pb-3">
+            <div className="hud-label">Очки</div>
+            <div className="font-disp text-3xl text-[#ffd76a] leading-tight tabular-nums">{hud.score.toLocaleString("ru-RU")}</div>
+            <div className="text-[10px] tracking-[0.2em] text-[#8fae58] mt-0.5">
+              РЕКОРД {hud.best.toLocaleString("ru-RU")}{hud.newBest && <span className="text-[#ffd76a] blink ml-1">НОВЫЙ</span>}
             </div>
           </div>
 
-          <div className="hud-panel p-3 pt-4">
-            <div className="flex items-baseline justify-between">
-              <span className="hud-label">Уровень</span>
-              <span className="font-disp text-[28px] leading-none text-[#e8efdd]">{hud.level}</span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="hud-panel px-4 pt-4 pb-3">
+              <div className="hud-label">Экипаж</div>
+              <div className="flex items-end gap-2 mt-1.5">
+                <span className="font-disp text-3xl text-[#a8f637] tabular-nums">{hud.lives}</span>
+                <div className="flex flex-wrap gap-1 mb-1.5 max-w-[80px]">
+                  {Array.from({ length: Math.min(hud.lives, 8) }).map((_, i) => (
+                    <span key={i} className="inline-block w-3 h-3" style={{ background: "#a8f637", clipPath: "polygon(0 25%, 100% 25%, 100% 100%, 0 100%)", opacity: 0.9 }} />
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="text-[11px] font-bold tracking-[0.18em] text-[#8fae58] mt-1">{hud.levelTitle}</div>
-            <div className="flex items-center gap-1.5 mt-2.5">
-              <span className="hud-label mr-1">Тюнинг</span>
-              {[0, 1, 2].map((i) => (
-                <StarIcon key={i} className="w-4 h-4 text-[#ffd23a]" dim={hud.star <= i} />
-              ))}
+            <div className="hud-panel px-4 pt-4 pb-3">
+              <div className="hud-label">Рубеж</div>
+              <div className="font-disp text-3xl text-[#e8efdd] tabular-nums">{hud.level}<span className="text-sm text-[#8fae58]"> / {LEVEL_COUNT}</span></div>
+              <div className="text-[10px] tracking-[0.15em] text-[#8fae58] truncate">{hud.levelTitle}</div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <button className="btn-arcade btn-dark py-2.5 text-[11px] flex items-center justify-center gap-2" onClick={() => eng()?.togglePause()} disabled={!inGame}>
-              <PauseIcon className="w-3 h-3" /> Пауза · P
-            </button>
-            <button className="btn-arcade btn-dark py-2.5 text-[11px]" onClick={() => eng()?.backToMenu()}>
-              В меню
-            </button>
+          <div className="hud-panel px-4 pt-4 pb-3">
+            <div className="hud-label">Тюнинг орудия</div>
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-[11px] text-[#cfe3ae]">
+                  <span className="w-3 h-3 inline-block" style={{ background: "#ffc84a" }} /> Игрок 1
+                </span>
+                <StarRow n={hud.star1} color="#ffc84a" />
+              </div>
+              {coOp && (
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-[11px] text-[#cfe3ae]">
+                    <span className="w-3 h-3 inline-block" style={{ background: "#6fe25c" }} /> Игрок 2
+                  </span>
+                  <StarRow n={hud.star2} color="#6fe25c" />
+                </div>
+              )}
+            </div>
+            <div className="mt-2.5 flex gap-2">
+              <button className="btn-arcade btn-dark px-3 py-1.5 text-[10px] flex-1" onClick={() => g?.togglePause()} disabled={hud.phase !== "playing"}>
+                {hud.phase === "paused" ? "Продолжить" : "Пауза"}
+              </button>
+              <button className="btn-arcade btn-dark px-3 py-1.5 text-[10px] flex-1" onClick={() => g?.toggleMute()}>
+                Звук: {hud.muted ? "выкл" : "вкл"}
+              </button>
+            </div>
           </div>
 
-          <div className="hud-panel p-3 pt-4 mt-auto">
-            <span className="hud-label">Управление</span>
-            <div className="mt-2 space-y-1.5 text-[10px] text-[#cfe3ae]">
-              <div className="flex justify-between items-center"><span>Движение</span><span className="flex gap-1"><Kbd>W</Kbd><Kbd>A</Kbd><Kbd>S</Kbd><Kbd>D</Kbd></span></div>
-              <div className="flex justify-between items-center"><span>Огонь</span><span className="flex gap-1"><Kbd>SPACE</Kbd><Kbd>J</Kbd></span></div>
-              <div className="flex justify-between items-center"><span>Пауза</span><span className="flex gap-1"><Kbd>P</Kbd><Kbd>ESC</Kbd></span></div>
-              <div className="flex justify-between items-center"><span>Звук</span><Kbd>M</Kbd></div>
-            </div>
-            <div className="mt-3 pt-2 border-t border-[#2a3a1c] text-[9px] leading-relaxed text-[#6d8444]">
-              Сбивай мигающие танки — из них выпадают бонусы. Не дай врагам расстрелять Орла.
+          <div className="hud-panel px-4 pt-4 pb-4 hidden sm:block">
+            <div className="hud-label mb-2">Управление</div>
+            <div className="text-[11px] text-[#cfe3ae] flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="w-3 h-3 inline-block shrink-0" style={{ background: "#ffc84a" }} />
+                <Kbd>W</Kbd><Kbd>A</Kbd><Kbd>S</Kbd><Kbd>D</Kbd> ход · <Kbd>Пробел</Kbd> огонь
+              </div>
+              {coOp ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="w-3 h-3 inline-block shrink-0" style={{ background: "#6fe25c" }} />
+                  <Kbd>←</Kbd><Kbd>↑</Kbd><Kbd>↓</Kbd><Kbd>→</Kbd> ход · <Kbd>Enter</Kbd> огонь
+                </div>
+              ) : (
+                <div className="text-[10px] text-[#8fae58]">В соло работают и стрелки</div>
+              )}
+              <div className="text-[10px] text-[#8fae58] pt-0.5 border-t border-[#2a3a1c] mt-1">
+                <Kbd>P</Kbd> пауза · <Kbd>M</Kbd> звук · бонусы подбираются корпусом
+              </div>
             </div>
           </div>
-        </aside>
-      </main>
+        </div>
+      </div>
     </div>
-  );
-}
-
-function TouchBtn({ label, onDown, onUp }: { label: string; onDown: () => void; onUp: () => void }) {
-  return (
-    <button
-      className="touch-btn rounded-md h-11 flex items-center justify-center text-base"
-      onPointerDown={(e) => { e.preventDefault(); onDown(); }}
-      onPointerUp={onUp}
-      onPointerLeave={onUp}
-      onPointerCancel={onUp}
-    >
-      {label}
-    </button>
   );
 }

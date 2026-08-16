@@ -1,6 +1,6 @@
 /* Движок «Стального Рубежа» — канвас, 60 FPS, всё рисуется процедурно. */
 import { audio } from "./audio";
-import { LEVELS, levelName } from "./levels";
+import { buildLevel, levelName, LEVEL_COUNT } from "./levels";
 
 export type Phase = "menu" | "intro" | "playing" | "paused" | "clear" | "gameover" | "victory";
 
@@ -14,6 +14,10 @@ export interface HudSnapshot {
   levelTitle: string;
   enemiesLeft: number;
   star: number;
+  star1: number;
+  star2: number;
+  mode: number;
+  menuSel: number;
   muted: boolean;
   kills: number;
   accuracy: number;
@@ -41,6 +45,14 @@ interface Tank {
   kind: Kind; hp: number; cd: number; star: number; shield: number;
   spawnT: number; flash: number; ai: number; recoil: number; tread: number;
   isFlash: boolean; hitWall: boolean;
+  isP2?: boolean;
+}
+interface HumanSlot {
+  idx: 0 | 1;
+  tank: Tank | null;
+  respawnT: number;
+  star: number;
+  spawnX: number;
 }
 interface Bullet {
   x: number; y: number; dir: Dir; speed: number; power: number;
@@ -84,7 +96,9 @@ export class BattleCity {
 
   private grid = new Uint8Array(N * N);
   private tanks: Tank[] = [];
-  private player: Tank | null = null;
+  private humans: HumanSlot[] = [];
+  private mode: 1 | 2 = 1;
+  private menuSel = 0;
   private bullets: Bullet[] = [];
   private particles: Particle[] = [];
   private popups: Popup[] = [];
@@ -160,6 +174,12 @@ export class BattleCity {
     window.removeEventListener("pointerdown", this.onPointer);
   }
 
+  private get player(): Tank | null { return this.humans[0]?.tank ?? null; }
+  private get anyHuman(): Tank | null {
+    for (const h of this.humans) if (h.tank) return h.tank;
+    return null;
+  }
+
   // ============================= INPUT =============================
   private keyDown(e: KeyboardEvent) {
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
@@ -167,6 +187,14 @@ export class BattleCity {
     this.keys.add(e.code);
     if (e.repeat) return;
     if (e.code === "KeyM") this.toggleMute();
+    if (this.phase === "menu") {
+      if (["ArrowUp", "ArrowDown", "KeyW", "KeyS"].includes(e.code)) {
+        this.menuSel = (this.menuSel + 1) % 2;
+        audio.uiMove();
+      }
+      if (e.code === "Digit1" || e.code === "Numpad1") this.startRun(1);
+      if (e.code === "Digit2" || e.code === "Numpad2") this.startRun(2);
+    }
     if (e.code === "Enter") this.enterPressed();
     if ((e.code === "KeyP" || e.code === "Escape") && (this.phase === "playing" || this.phase === "paused")) this.togglePause();
   }
@@ -176,8 +204,8 @@ export class BattleCity {
 
   private enterPressed() {
     switch (this.phase) {
-      case "menu": case "gameover": this.startRun(); break;
-      case "victory": this.continueWar(); break;
+      case "menu": case "gameover": this.startRun(this.mode); break;
+      case "victory": this.backToMenu(); break;
       case "paused": this.togglePause(); break;
       case "intro": this.introT = Math.min(this.introT, 0.02); break;
       case "clear": this.clearT = Math.min(this.clearT, 0.02); break;
@@ -185,13 +213,16 @@ export class BattleCity {
     }
   }
 
-  startRun() {
-    this.score = 0; this.lives = 3; this.kills = 0; this.runPowerups = 0; this.newBest = false;
+  setMenuSel(i: number) { this.menuSel = i; audio.ensure(); audio.uiMove(); }
+  startRun(mode: 1 | 2 = 1) {
+    this.mode = mode;
+    this.score = 0;
+    this.lives = mode === 2 ? 6 : 3;
+    this.kills = 0; this.runPowerups = 0; this.newBest = false;
     audio.ensure();
     this.loadLevel(1);
   }
-  continueWar() { this.loadLevel(this.level + 1); }
-  backToMenu() { this.phase = "menu"; this.loadLevel(1, true); }
+  backToMenu() { this.phase = "menu"; this.menuSel = this.mode === 2 ? 1 : 0; this.loadLevel(1, true); }
   togglePause() {
     if (this.phase === "playing") { this.phase = "paused"; audio.pauseBlip(); }
     else if (this.phase === "paused") { this.phase = "playing"; audio.pauseBlip(); this.last = performance.now(); }
@@ -201,8 +232,7 @@ export class BattleCity {
   // ============================= LEVELS =============================
   private loadLevel(lv: number, silent = false) {
     this.level = lv;
-    const def = LEVELS[(lv - 1) % LEVELS.length];
-    const cycle = Math.floor((lv - 1) / LEVELS.length);
+    const def = buildLevel(lv);
     const g = this.grid;
     g.fill(EMPTY);
     for (let r = 0; r < 13; r++) {
@@ -216,42 +246,50 @@ export class BattleCity {
         }
       }
     }
-    // вырезаем спавны врагов, спавн игрока, зону Орла
+    // вырезаем спавны врагов, спавны игроков, зону Орла
     const clear = (c0: number, r0: number, w: number, h: number) => {
       for (let r = r0; r < r0 + h; r++) for (let c = c0; c < c0 + w; c++) g[r * N + c] = EMPTY;
     };
     clear(0, 0, 2, 2); clear(12, 0, 2, 2); clear(24, 0, 2, 2);
     clear(8, 24, 2, 2);
+    if (this.mode === 2) clear(16, 24, 2, 2);
     clear(10, 22, 6, 4);
     for (const [c, r] of FORT) g[r * N + c] = BRICK;
     for (let r = 24; r <= 25; r++) for (let c = 12; c <= 13; c++) g[r * N + c] = EAGLE;
 
-    // очередь врагов
-    const speedMul = Math.min(1.6, 1 + cycle * 0.12);
+    // очередь врагов (детерминированный состав, случайный порядок)
     const q: Kind[] = [];
     const push = (k: Kind, n: number) => { for (let i = 0; i < n; i++) q.push(k); };
-    push("basic", def.comp.basic + cycle * 3);
-    push("fast", def.comp.fast + cycle);
-    push("power", def.comp.power + cycle);
-    push("armor", def.comp.armor + cycle);
+    push("basic", def.comp.basic);
+    push("fast", def.comp.fast);
+    push("power", def.comp.power);
+    push("armor", def.comp.armor);
     for (let i = q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [q[i], q[j]] = [q[j], q[i]]; }
     this.queue = q;
-    (this as any)._speedMul = speedMul;
-    (this as any)._armorHp = Math.min(7, 4 + cycle);
-    (this as any)._fireMul = 1 + cycle * 0.2;
+    (this as any)._speedMul = def.speedMul;
+    (this as any)._armorHp = def.armorHp;
+    (this as any)._fireMul = def.fireMul;
 
     this.tanks = []; this.bullets = []; this.powerups = []; this.popups = [];
     this.particles = [];
     this.spawnCounter = 0; this.spawnCd = 1.0; this.spawnPoint = 0;
     this.freezeT = 0; this.shovelT = 0; this.fortSnapshot = null;
     this.eagleAlive = true; this.pendingOver = null;
-    this.lvlShots = 0; this.lvlHits = 0; this.respawnT = 0;
+    this.lvlShots = 0; this.lvlHits = 0;
     this.shake = 0; this.redFlash = 0;
 
-    this.player = this.makeTank("player", 8 * TILE, 24 * TILE);
-    this.player.star = this.star;
-    this.player.shield = 3;
-    this.tanks.push(this.player);
+    // слоты игроков (прокачка сохраняется между уровнями)
+    const slots: HumanSlot[] = [{ idx: 0, tank: null, respawnT: 0, star: this.humans[0]?.star ?? 0, spawnX: 8 * TILE }];
+    if (this.mode === 2) slots.push({ idx: 1, tank: null, respawnT: 0, star: this.humans[1]?.star ?? 0, spawnX: 16 * TILE });
+    for (const s of slots) {
+      const t = this.makeTank("player", s.spawnX, 24 * TILE);
+      t.star = s.star;
+      t.shield = 3;
+      t.isP2 = s.idx === 1;
+      s.tank = t;
+      this.tanks.push(t);
+    }
+    this.humans = slots;
 
     this.phase = "intro";
     this.introT = 1.9;
@@ -282,10 +320,10 @@ export class BattleCity {
     }
     if (this.phase === "clear") {
       this.clearT -= dt;
-      this.updatePlayer(dt);
+      this.updateHumans(dt);
       this.updateBullets(dt);
       if (this.clearT <= 0) {
-        if (this.level % LEVELS.length === 0) { this.phase = "victory"; audio.victory(); this.saveBest(); }
+        if (this.level >= LEVEL_COUNT) { this.phase = "victory"; audio.victory(); this.saveBest(); }
         else this.loadLevel(this.level + 1);
       }
       return;
@@ -311,11 +349,7 @@ export class BattleCity {
       this.shovelT -= dt;
       if (this.shovelT <= 0) this.fortify(false);
     }
-    if (this.respawnT > 0) {
-      this.respawnT -= dt;
-      if (this.respawnT <= 0) this.tryRespawn();
-    }
-    this.updatePlayer(dt);
+    this.updateHumans(dt);
     this.updateSpawning(dt);
     this.updateEnemies(dt);
     this.updateBullets(dt);
@@ -323,31 +357,60 @@ export class BattleCity {
     this.checkClear();
   }
 
-  private updatePlayer(dt: number) {
-    const p = this.player;
-    if (!p) return;
-    if (p.spawnT > 0) { p.spawnT -= dt; return; }
-    p.shield = Math.max(0, p.shield - dt);
-    p.flash = Math.max(0, p.flash - dt);
-    p.recoil = Math.max(0, p.recoil - dt * 6);
-    p.base = 138 + p.star * 13;
+  private updateHumans(dt: number) {
+    for (const slot of this.humans) {
+      if (!slot.tank) {
+        // ожидание возрождения из общего запаса жизней
+        if (this.lives > 0 && !this.pendingOver) {
+          slot.respawnT -= dt;
+          if (slot.respawnT <= 0) this.tryRespawn(slot);
+        }
+        continue;
+      }
+      const p = slot.tank;
+      if (p.spawnT > 0) { p.spawnT -= dt; continue; }
+      p.shield = Math.max(0, p.shield - dt);
+      p.flash = Math.max(0, p.flash - dt);
+      p.recoil = Math.max(0, p.recoil - dt * 6);
+      p.base = 138 + p.star * 13;
 
-    let dir: Dir | null = null;
-    if (this.keys.has("ArrowUp") || this.keys.has("KeyW") || this.touchDir === 0) dir = 0;
-    else if (this.keys.has("ArrowRight") || this.keys.has("KeyD") || this.touchDir === 1) dir = 1;
-    else if (this.keys.has("ArrowDown") || this.keys.has("KeyS") || this.touchDir === 2) dir = 2;
-    else if (this.keys.has("ArrowLeft") || this.keys.has("KeyA") || this.touchDir === 3) dir = 3;
+      const k = this.keys;
+      let dir: Dir | null = null;
+      let fire = false;
+      if (slot.idx === 0) {
+        if (this.mode === 1) {
+          // соло: и WASD, и стрелки
+          if (k.has("ArrowUp") || k.has("KeyW") || this.touchDir === 0) dir = 0;
+          else if (k.has("ArrowRight") || k.has("KeyD") || this.touchDir === 1) dir = 1;
+          else if (k.has("ArrowDown") || k.has("KeyS") || this.touchDir === 2) dir = 2;
+          else if (k.has("ArrowLeft") || k.has("KeyA") || this.touchDir === 3) dir = 3;
+          fire = k.has("Space") || k.has("KeyJ") || this.touchFire;
+        } else {
+          if (k.has("KeyW") || this.touchDir === 0) dir = 0;
+          else if (k.has("KeyD") || this.touchDir === 1) dir = 1;
+          else if (k.has("KeyS") || this.touchDir === 2) dir = 2;
+          else if (k.has("KeyA") || this.touchDir === 3) dir = 3;
+          fire = k.has("Space") || k.has("KeyJ") || this.touchFire;
+        }
+      } else {
+        if (k.has("ArrowUp")) dir = 0;
+        else if (k.has("ArrowRight")) dir = 1;
+        else if (k.has("ArrowDown")) dir = 2;
+        else if (k.has("ArrowLeft")) dir = 3;
+        fire = k.has("Enter") || k.has("NumpadEnter") || k.has("ShiftRight") || k.has("KeyL");
+      }
 
-    if (dir !== null) { this.steer(p, dir); this.moveTank(p, dt); }
-    else {
-      const f = 1 - Math.pow(0.55, dt * 60);
-      p.vx *= 1 - f; p.vy *= 1 - f;
-      const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
-      if (!this.collides(nx, p.y, p)) p.x = nx; else p.vx = 0;
-      if (!this.collides(p.x, ny, p)) p.y = ny; else p.vy = 0;
+      if (dir !== null) { this.steer(p, dir); this.moveTank(p, dt); }
+      else {
+        const f = 1 - Math.pow(0.55, dt * 60);
+        p.vx *= 1 - f; p.vy *= 1 - f;
+        const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
+        if (!this.collides(nx, p.y, p)) p.x = nx; else p.vx = 0;
+        if (!this.collides(p.x, ny, p)) p.y = ny; else p.vy = 0;
+      }
+      p.cd -= dt;
+      if (fire && p.cd <= 0) this.firePlayer(p);
     }
-    p.cd -= dt;
-    if ((this.keys.has("Space") || this.keys.has("KeyJ") || this.touchFire) && p.cd <= 0) this.firePlayer(p);
   }
 
   private steer(t: Tank, dir: Dir) {
@@ -446,9 +509,9 @@ export class BattleCity {
 
   private pickDir(t: Tank): Dir {
     const cx = t.x + TANK / 2, cy = t.y + TANK / 2;
-    const usePlayer = this.player && Math.random() < 0.45;
-    const tx = usePlayer ? this.player!.x + TANK / 2 : 13 * TILE;
-    const ty = usePlayer ? this.player!.y + TANK / 2 : 25 * TILE;
+    const tgt = Math.random() < 0.45 ? this.anyHuman : null;
+    const tx = tgt ? tgt.x + TANK / 2 : 13 * TILE;
+    const ty = tgt ? tgt.y + TANK / 2 : 25 * TILE;
     const scored = ([0, 1, 2, 3] as Dir[]).map((d) => ({
       d,
       s: DIRS[d].x * (tx - cx) + DIRS[d].y * (ty - cy) + rnd(-30, 30),
@@ -491,7 +554,9 @@ export class BattleCity {
     const d = DIRS[t.dir];
     const cx = t.x + TANK / 2, cy = t.y + TANK / 2;
     const targets: { x: number; y: number }[] = [{ x: 13 * TILE, y: 25 * TILE }];
-    if (this.player) targets.push({ x: this.player.x + TANK / 2, y: this.player.y + TANK / 2 });
+    for (const h of this.humans) {
+      if (h.tank && h.tank.spawnT <= 0) targets.push({ x: h.tank.x + TANK / 2, y: h.tank.y + TANK / 2 });
+    }
     for (const tg of targets) {
       const dx = tg.x - cx, dy = tg.y - cy;
       const along = dx * d.x + dy * d.y;
@@ -566,12 +631,16 @@ export class BattleCity {
             break;
           }
         }
-      } else if (this.player && this.player.spawnT <= 0) {
-        const p = this.player;
-        if (Math.abs(b.x - (p.x + TANK / 2)) < TANK / 2 + 3 && Math.abs(b.y - (p.y + TANK / 2)) < TANK / 2 + 3) {
-          b.dead = true;
-          if (p.shield > 0) { audio.steelHit(); this.sparks(b.x, b.y, "#8fe8ff", 8); }
-          else this.killPlayer();
+      } else {
+        for (const slot of this.humans) {
+          const p = slot.tank;
+          if (!p || p.spawnT > 0) continue;
+          if (Math.abs(b.x - (p.x + TANK / 2)) < TANK / 2 + 3 && Math.abs(b.y - (p.y + TANK / 2)) < TANK / 2 + 3) {
+            b.dead = true;
+            if (p.shield > 0) { audio.steelHit(); this.sparks(b.x, b.y, "#8fe8ff", 8); }
+            else this.killTank(slot, p);
+            break;
+          }
         }
       }
     }
@@ -635,29 +704,29 @@ export class BattleCity {
     this.pendingOver = { t: 1.6, reason: "Орёл уничтожен" };
   }
 
-  private killPlayer() {
-    const p = this.player;
-    if (!p) return;
+  private killTank(slot: HumanSlot, p: Tank) {
     audio.playerDeath();
     this.boom(p.x + TANK / 2, p.y + TANK / 2, true);
     this.shake = 12; this.redFlash = 0.7;
     this.tanks = this.tanks.filter((t) => t !== p);
-    this.player = null;
-    this.star = 0;
+    slot.tank = null;
+    slot.star = 0; // прокачка сгорает вместе с танком
     this.lives--;
     if (this.lives <= 0 && !this.pendingOver) {
-      this.pendingOver = { t: 1.7, reason: "Танки закончились" };
+      const allDead = this.humans.every((h) => !h.tank);
+      // если напарник ещё в строю — бой идёт до последнего танка
+      if (allDead) this.pendingOver = { t: 1.7, reason: "Танки закончились" };
     } else if (this.lives > 0) {
-      this.respawnT = 1.1;
+      slot.respawnT = 1.1;
     }
   }
 
-  private tryRespawn() {
-    if (this.player) return;
-    if (this.collides(8 * TILE, 24 * TILE, null)) { this.respawnT = 0.35; return; }
-    const p = this.makeTank("player", 8 * TILE, 24 * TILE);
-    p.shield = 3; p.star = this.star;
-    this.player = p;
+  private tryRespawn(slot: HumanSlot) {
+    if (slot.tank || this.lives <= 0) return;
+    if (this.collides(slot.spawnX, 24 * TILE, null)) { slot.respawnT = 0.35; return; }
+    const p = this.makeTank("player", slot.spawnX, 24 * TILE);
+    p.shield = 3; p.star = slot.star; p.isP2 = slot.idx === 1;
+    slot.tank = p;
     this.tanks.push(p);
   }
 
@@ -692,26 +761,32 @@ export class BattleCity {
   }
 
   private updatePowerups(dt: number) {
-    const p = this.player;
     for (const pu of this.powerups) {
       pu.t -= dt;
-      if (p && p.spawnT <= 0 && pu.x < p.x + TANK && pu.x + 48 > p.x && pu.y < p.y + TANK && pu.y + 48 > p.y) {
-        this.applyPowerup(pu.type, p.x + TANK / 2, p.y);
-        pu.t = 0;
+      for (const slot of this.humans) {
+        const p = slot.tank;
+        if (!p || p.spawnT > 0) continue;
+        if (pu.x < p.x + TANK && pu.x + 48 > p.x && pu.y < p.y + TANK && pu.y + 48 > p.y) {
+          this.applyPowerup(pu.type, p);
+          pu.t = 0;
+          break;
+        }
       }
     }
     this.powerups = this.powerups.filter((x) => x.t > 0);
   }
 
-  private applyPowerup(type: string, px: number, py: number) {
+  private applyPowerup(type: string, picker: Tank) {
+    const px = picker.x + TANK / 2, py = picker.y;
+    const slot = this.humans.find((h) => h.tank === picker);
     this.runPowerups++;
     switch (type) {
       case "star":
-        if (this.player) this.player.star = Math.min(3, this.player.star + 1);
-        this.star = this.player ? this.player.star : this.star;
+        picker.star = Math.min(3, picker.star + 1);
+        if (slot) slot.star = picker.star;
         audio.powerup(); this.popup(px, py, "УЛУЧШЕНИЕ", "#a8f637"); break;
       case "shield":
-        if (this.player) this.player.shield = 10;
+        picker.shield = 10;
         audio.shield(); this.popup(px, py, "ЩИТ", "#8fe8ff"); break;
       case "clock":
         this.freezeT = 8; audio.freeze(); this.popup(px, py, "ЗАМОРОЗКА", "#8fe8ff"); break;
@@ -816,7 +891,11 @@ export class BattleCity {
       level: this.level,
       levelTitle: levelName(this.level),
       enemiesLeft,
-      star: this.player ? this.player.star : this.star,
+      star: this.humans[0]?.star ?? 0,
+      star1: this.humans[0]?.star ?? 0,
+      star2: this.humans[1]?.star ?? 0,
+      mode: this.mode,
+      menuSel: this.menuSel,
       muted: audio.muted,
       kills: this.kills,
       accuracy: this.lvlShots ? Math.round((100 * this.lvlHits) / this.lvlShots) : 0,
@@ -930,7 +1009,7 @@ export class BattleCity {
       ctx.textAlign = "center";
       ctx.fillStyle = "#a8f637";
       ctx.font = '34px "Russo One", sans-serif';
-      ctx.fillText(`УРОВЕНЬ ${this.level}`, SIZE / 2, SIZE / 2 - 8);
+      ctx.fillText(`УРОВЕНЬ ${this.level} / ${LEVEL_COUNT}`, SIZE / 2, SIZE / 2 - 8);
       ctx.fillStyle = "#8fae58";
       ctx.font = '15px "Russo One", sans-serif';
       ctx.fillText(levelName(this.level), SIZE / 2, SIZE / 2 + 26);
@@ -1084,7 +1163,9 @@ export class BattleCity {
     }
 
     const def = tank.kind === "player"
-      ? { body: "#ffc84a", dark: "#b57e12", track: "#3a2f12" }
+      ? (tank.isP2
+        ? { body: "#6fe25c", dark: "#2c7a22", track: "#1c3413" }
+        : { body: "#ffc84a", dark: "#b57e12", track: "#3a2f12" })
       : ENEMY_DEF[tank.kind as Exclude<Kind, "player">];
     const trackCol = tank.kind === "player" ? "#3a2f12" : "#242b1e";
 
