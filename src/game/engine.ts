@@ -190,6 +190,7 @@ export class BattleCity {
     if (this.phase === "menu") {
       if (["ArrowUp", "ArrowDown", "KeyW", "KeyS"].includes(e.code)) {
         this.menuSel = (this.menuSel + 1) % 2;
+        this.mode = this.menuSel === 1 ? 2 : 1;
         audio.uiMove();
       }
       if (e.code === "Digit1" || e.code === "Numpad1") this.startRun(1);
