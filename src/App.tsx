@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { BattleCity, type HudSnapshot } from "./game/engine";
 import { LEVEL_COUNT } from "./game/levels";
+import Deathmatch from "./dm/Deathmatch";
 
 const ENEMIES = [
   { color: "#b9c6ae", label: "РАЗВЕДЧИК", pts: 100 },
@@ -19,6 +20,12 @@ const POWERUPS = [
 ];
 
 export default function App() {
+  const [screen, setScreen] = useState<"campaign" | "dm">("campaign");
+  if (screen === "dm") return <Deathmatch onExit={() => setScreen("campaign")} />;
+  return <Campaign onDM={() => setScreen("dm")} />;
+}
+
+function Campaign({ onDM }: { onDM: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<BattleCity | null>(null);
   const [hud, setHud] = useState<HudSnapshot | null>(null);
@@ -45,7 +52,7 @@ export default function App() {
           <span className="rivet" style={{ bottom: 4, right: 4 }} />
           <div className="relative" style={{ width: "min(92vw, 60vh, 624px)" }}>
             <canvas ref={canvasRef} className="block w-full h-auto" style={{ imageRendering: "auto" }} />
-            {hud && hud.phase === "menu" && <MenuOverlay hud={hud} onStart={(m) => eng()?.startRun(m)} onSel={(i) => eng()?.setMenuSel(i)} />}
+            {hud && hud.phase === "menu" && <MenuOverlay hud={hud} onStart={(m) => eng()?.startRun(m)} onSel={(i) => eng()?.setMenuSel(i)} onDM={onDM} />}
             {hud && hud.phase === "paused" && <PauseOverlay hud={hud} onResume={() => eng()?.togglePause()} onMenu={() => eng()?.backToMenu()} />}
             {hud && hud.phase === "clear" && (
               <div className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none overlay-in">
@@ -187,7 +194,7 @@ export default function App() {
 
 /* ==================== оверлеи ==================== */
 
-function MenuOverlay({ hud, onStart, onSel }: { hud: HudSnapshot; onStart: (m: 1 | 2) => void; onSel: (i: number) => void }) {
+function MenuOverlay({ hud, onStart, onSel, onDM }: { hud: HudSnapshot; onStart: (m: 1 | 2) => void; onSel: (i: number) => void; onDM: () => void }) {
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#070904]/82 backdrop-blur-[2px] text-center px-4 overflow-y-auto">
       <div className="overlay-in w-full max-w-[460px] flex flex-col items-center">
@@ -217,6 +224,13 @@ function MenuOverlay({ hud, onStart, onSel }: { hud: HudSnapshot; onStart: (m: 1
             onClick={() => onStart(2)}
           >
             2 Игрока · <span className="opacity-70">[2]</span>
+          </button>
+          <button
+            className="btn-arcade btn-amber py-3 text-sm"
+            onClick={onDM}
+            title="Арена против друзей и ботов"
+          >
+            Дезматч · арена ×5
           </button>
           <p className="text-[10px] text-[#8fae58] tracking-wider">W/S — выбор · ENTER — бой</p>
         </div>
