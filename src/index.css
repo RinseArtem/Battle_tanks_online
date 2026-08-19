@@ -163,6 +163,40 @@ body {
   animation: stripesMove 1.4s linear infinite;
 }
 
+/* ---------- дезматч: чипы и слайдер ---------- */
+.chip {
+  font-family: "Russo One", sans-serif;
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 1px solid #3c5224;
+  background: #0d1108;
+  color: #8fae58;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.chip:hover { border-color: #56742c; color: #cfe3ae; }
+.chip-on {
+  border-color: #a8f637;
+  background: #1b2412;
+  color: #a8f637;
+  box-shadow: 0 0 10px rgba(168, 246, 55, 0.25);
+}
+
+input[type="range"] {
+  height: 4px;
+  appearance: none;
+  background: #2a3a1c;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px; height: 16px;
+  background: linear-gradient(180deg, #c3ff5e, #86d416);
+  border: 1px solid #0a0d07;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+
 /* ---------- touch controls ---------- */
 .touch-btn {
   touch-action: none;

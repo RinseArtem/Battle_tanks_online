@@ -114,6 +114,28 @@ class AudioEngine {
   }
   uiMove() { this.beep("square", 700, 900, 0.05, 0.08); }
   pauseBlip() { this.beep("square", 440, 220, 0.1, 0.1); }
+
+  // ---------- дезматч ----------
+  uiClick() { this.beep("square", 900, 1200, 0.06, 0.1); }
+  join() { this.beep("square", 520, 780, 0.09, 0.12); this.beep("square", 780, 1040, 0.09, 0.1, 0.09); }
+  dmShoot(kind: string) {
+    if (kind === "mg") this.beep("square", 880, 320, 0.05, 0.08);
+    else if (kind === "shotgun") { this.noise(0.14, 0.3, 1800, 200); this.beep("square", 300, 90, 0.12, 0.2); }
+    else if (kind === "rocket") { this.noise(0.3, 0.2, 900, 150); this.beep("sawtooth", 220, 90, 0.28, 0.14); }
+    else if (kind === "laser") { this.beep("sawtooth", 1900, 700, 0.12, 0.12); this.beep("sine", 2400, 900, 0.1, 0.08); }
+    else if (kind === "mine") { this.beep("sine", 500, 120, 0.25, 0.3); this.noise(0.3, 0.3, 1200, 100); }
+  }
+  dmHit() { this.beep("square", 300, 140, 0.06, 0.12); }
+  dmBoom(big = false) {
+    this.noise(big ? 0.7 : 0.35, big ? 0.5 : 0.3, big ? 1800 : 1200, 60, 0, 0.5);
+    this.beep("sine", big ? 160 : 130, 34, big ? 0.55 : 0.3, big ? 0.5 : 0.3);
+  }
+  pickupSfx() { this.beep("square", 660, 990, 0.08, 0.13); this.beep("square", 990, 1320, 0.09, 0.11, 0.07); }
+  healSfx() { this.beep("sine", 500, 900, 0.16, 0.1); this.beep("sine", 700, 1200, 0.16, 0.08, 0.1); }
+  alarmSfx() { this.beep("square", 620, 620, 0.14, 0.14); this.beep("square", 470, 470, 0.14, 0.14, 0.18); }
+  streakSfx() { [660, 880, 1100, 1320].forEach((n, i) => this.beep("square", n, n, 0.08, 0.13, i * 0.06)); }
+  zoneSfx() { this.beep("sawtooth", 200, 60, 0.7, 0.16); }
+  countdown() { this.beep("square", 880, 880, 0.1, 0.14); }
 }
 
 export const audio = new AudioEngine();
